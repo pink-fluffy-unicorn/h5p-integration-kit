@@ -1,6 +1,6 @@
 {
   "name": "h5p-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Modern H5P server using @lumieducation/h5p-server",
   "type": "module",
   "main": "src/index.js",
@@ -9,14 +9,25 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "@lumieducation/h5p-express": "^10.0.0",
-    "@lumieducation/h5p-server": "^10.0.0",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "@lumieducation/h5p-express": "^10.0.5",
+    "@lumieducation/h5p-server": "^10.0.4",
+    "ajv": "^8.20.0",
+    "body-parser": "^2.2.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "express-fileupload": "^1.5.2",
-    "multer": "^1.4.5-lts.1"
+    "fast-uri": "^3.1.2",
+    "jsonpath": "^1.3.0",
+    "multer": "^2.1.1"
+  },
+  "overrides": {
+    "@lumieducation/h5p-express": {
+      "path-to-regexp": "0.1.13"
+    },
+    "underscore": "1.13.8",
+    "postcss": "8.5.15",
+    "qs": "6.15.2"
   },
   "engines": {
     "node": ">=18.0.0"
