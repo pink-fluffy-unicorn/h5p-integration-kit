@@ -14,12 +14,18 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 import fileUpload from 'express-fileupload';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import {fileURLToPath} from 'url';
 import fs from 'fs/promises';
+import {readFileSync} from 'fs';
 import * as H5P from '@lumieducation/h5p-server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Read the server version from package.json (single source of truth)
+const SERVER_VERSION = JSON.parse(
+    readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')
+).version;
 
 const app = express();
 
@@ -779,7 +785,7 @@ app.get('/api/content-types', async (req, res) => {
 // ============================================================================
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'h5p-server' });
+    res.json({status: 'ok', service: 'h5p-server', version: SERVER_VERSION});
 });
 
 // ============================================================================
