@@ -204,12 +204,18 @@ async function initH5P() {
         undefined            // 9. options
     );
 
-    // Create a proper H5PPlayer instance for playing content
+    // Create a proper H5PPlayer instance for playing content.
+    // The client-side H5P.getLibraryPath() falls back to
+    // "H5PIntegration.url + '/libraries/'" when H5PIntegration.urlLibraries is
+    // not set. Since our libraries are served under "/h5p/libraries" (and not
+    // under "/libraries"), some content types (e.g. H5P.Timeline) would then
+    // request library.json from the wrong path and fail with a 404.
+    // Setting urlLibraries explicitly to the absolute libraries URL fixes this.
     h5pPlayer = new H5P.H5PPlayer(
         libraryStorage,
         contentStorage,
         config,
-        undefined,           // integrationObjectDefaults
+        {urlLibraries: `${config.baseUrl}${config.librariesUrl}`}, // integrationObjectDefaults
         urlGenerator,
         translationCallback
     );
