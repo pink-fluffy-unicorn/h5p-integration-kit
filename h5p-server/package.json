@@ -1,6 +1,6 @@
 {
   "name": "h5p-server",
-  "version": "1.0.3",
+  "version": "1.0.2",
   "description": "Modern H5P server using @lumieducation/h5p-server",
   "type": "module",
   "main": "src/index.js",
