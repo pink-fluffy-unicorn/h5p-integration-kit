@@ -8,6 +8,7 @@ services:
     build:
       context: ./h5p-server
       dockerfile: Dockerfile
+    image: h5p-integration-kit/h5p-server:local
     # Run as current user to avoid permission issues with mounted volumes
     user: "${UID:-1000}:${GID:-1000}"
     ports:
@@ -22,12 +23,37 @@ services:
       # For production: use named volume instead
       # - h5p_data:/data/h5p
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     restart: unless-stopped
+
+  # One-shot job: installs the H5P interaction types from the H5P Hub as soon as the
+  # server is healthy. A fresh deployment has an empty library store and the H5P server
+  # never fetches missing libraries by itself, so without this step the first content
+  # registered via the API fails with "install-missing-libraries".
+  #
+  # Idempotent - content types that are already present are skipped, so it can run on
+  # every `docker compose up`. Set H5P_BOOTSTRAP_LIBRARIES to a comma separated list of
+  # machine names to install only a subset instead of the whole Hub catalogue.
+  h5p-bootstrap:
+    build:
+      context: ./h5p-server
+      dockerfile: Dockerfile
+    image: h5p-integration-kit/h5p-server:local
+    depends_on:
+      h5p-server:
+        condition: service_healthy
+    environment:
+      # Reached over the compose network, so this is independent of H5P_BASE_URL
+      - H5P_SERVER_URL=http://h5p-server:3000
+      - H5P_BOOTSTRAP_LIBRARIES=${H5P_BOOTSTRAP_LIBRARIES:-all}
+      - H5P_BOOTSTRAP_RETRIES=${H5P_BOOTSTRAP_RETRIES:-3}
+      - H5P_BOOTSTRAP_UPDATE=${H5P_BOOTSTRAP_UPDATE:-false}
+    command: [ "node", "src/bootstrap-libraries.js" ]
+    restart: "no"
 
 volumes:
   h5p_data:
