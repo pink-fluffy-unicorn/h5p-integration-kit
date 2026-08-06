@@ -41,6 +41,8 @@ Both compose files run `h5p-server` **and** the one-shot `h5p-bootstrap` job tha
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+Deployment hosts set `COMPOSE_FILE=docker-compose.prod.yml` in their `.env`, so `-f` can be omitted there. If a `.env` with that line is present, plain `docker compose` commands act on the deployment stack, not on the development one.
+
 ## Commands
 
 ### Start H5P Server

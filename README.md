@@ -288,6 +288,10 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f h5p-bootstrap
 ```
 
+To avoid passing `-f` on every command, uncomment `COMPOSE_FILE=docker-compose.prod.yml`
+in the `.env` of that host. Docker Compose then uses the deployment file for every
+`docker compose` call in this directory - `up`, `down`, `logs`, `config` alike - so the commands above shorten to `docker compose up -d --build`. Keep the line commented out on development machines.
+
 The `h5p-bootstrap` job is part of it and **must** run on a deployment as well: a fresh data directory has an empty library store and the H5P server never fetches missing libraries by itself, so the first content would fail with `install-missing-libraries`. The job is idempotent - already installed content types are skipped - and it exits non-zero if a download failed, so check its log after every deployment.
 
 Both compose files use the same project name and therefore replace each other; do not run them side by side on one host.
