@@ -19,6 +19,9 @@ services:
       - H5P_DATA_PATH=/data/h5p
     volumes:
       # For development: mount local h5p directory
+      # Everything the server persists lives below this path - libraries, content, and
+      # the saved states of the learners in userdata/. Keeping the mount is what makes
+      # those states survive a container rebuild or update.
       - ./h5p-server/h5p:/data/h5p
       # For production: use named volume instead
       # - h5p_data:/data/h5p

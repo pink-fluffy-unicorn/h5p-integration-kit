@@ -107,6 +107,12 @@ app.use('/temp-files', async (req, res, next) => {
 const librariesPath = path.join(h5pBasePath, 'libraries');
 const contentPath = path.join(h5pBasePath, 'content');
 const tempPath = path.join(h5pBasePath, 'temp');
+// Interrupted attempts of learners ("Zwischenspeicherungen"): the H5P client posts the
+// state of a running content every `contentUserStateSaveInterval` ms. It lives below
+// H5P_DATA_PATH so it is covered by the same volume as content and libraries and
+// therefore survives a container rebuild. The directory name must stay "userdata" -
+// the deployments already hold learner data under that name.
+const userDataPath = path.join(h5pBasePath, 'userdata');
 const configPath = path.join(h5pBasePath, 'config.json');
 
 // Ensure directories exist
@@ -114,6 +120,7 @@ async function ensureDirectories() {
     await fs.mkdir(librariesPath, { recursive: true });
     await fs.mkdir(contentPath, { recursive: true });
     await fs.mkdir(tempPath, { recursive: true });
+    await fs.mkdir(userDataPath, {recursive: true});
 
     // Create default config if not exists
     try {
@@ -178,26 +185,39 @@ async function initH5P() {
     config.downloadUrl = '/h5p/download';
     config.temporaryFilesUrl = '/temp-files';
 
-    // H5P.fs signature:
-    // (config, librariesPath, temporaryStoragePath, contentPath,
-    //  contentUserDataStorage, contentStorage, translationCallback, urlGenerator, options)
+    // Despite its name this hook is not limited to CSRF tokens - it is the only way to
+    // append a query parameter to the callback URLs that end up in H5PIntegration. We
+    // need it to carry the user id: the H5P client calls contentUserData/finishedData
+    // with the URL as it stands in the integration object, and without the parameter
+    // createUser() would fall back to "anonymous" for every learner, so all of them
+    // would share a single saved state per content.
+    // The generator must return {name, value} - any other shape is silently ignored.
     const urlGenerator = new H5P.UrlGenerator(config, {
-        queryParamGenerator: (user) => ({ userId: user.id }),
+        queryParamGenerator: (user) => ({name: 'userId', value: user.id}),
         protectAjax: false,
-        protectContentUserData: false,
-        protectSetFinished: false
+        protectContentUserData: true,
+        protectSetFinished: true
     });
 
     // Create content and library storage
     const contentStorage = new H5P.fsImplementations.FileContentStorage(contentPath);
     const libraryStorage = new H5P.fsImplementations.FileLibraryStorage(librariesPath);
 
+    // Persists the learner states ("Zwischenspeicherungen") and the finished data as
+    // JSON files below userDataPath - one <contentId>-userdata.json and one
+    // <contentId>-finished.json per content object. Without this storage the
+    // ContentUserDataManager silently discards everything the client posts.
+    const contentUserDataStorage = new H5P.fsImplementations.FileContentUserDataStorage(userDataPath);
+
+    // H5P.fs signature:
+    // (config, librariesPath, temporaryStoragePath, contentPath,
+    //  contentUserDataStorage, contentStorage, translationCallback, urlGenerator, options)
     h5pEditor = H5P.fs(
         config,              // 1. config
         librariesPath,       // 2. librariesPath
         tempPath,            // 3. temporaryStoragePath
         contentPath,         // 4. contentPath
-        undefined,           // 5. contentUserDataStorage
+        contentUserDataStorage, // 5. contentUserDataStorage
         undefined,           // 6. contentStorage (use default)
         translationCallback, // 7. translationCallback
         urlGenerator,        // 8. urlGenerator
@@ -211,13 +231,18 @@ async function initH5P() {
     // under "/libraries"), some content types (e.g. H5P.Timeline) would then
     // request library.json from the wrong path and fail with a 404.
     // Setting urlLibraries explicitly to the absolute libraries URL fixes this.
+    // The player needs the same contentUserDataStorage as the editor, otherwise a saved
+    // state is never written into the H5PIntegration object and the learner restarts
+    // from scratch even though the state is on disk.
     h5pPlayer = new H5P.H5PPlayer(
         libraryStorage,
         contentStorage,
         config,
         {urlLibraries: `${config.baseUrl}${config.librariesUrl}`}, // integrationObjectDefaults
         urlGenerator,
-        translationCallback
+        translationCallback,
+        undefined,              // options
+        contentUserDataStorage
     );
 
     // Custom renderer that omits the download link (default renderer always shows it)
@@ -496,6 +521,12 @@ app.post('/edit/:contentId', fileUpload({ useTempFiles: true, tempFileDir: tempP
         const contentParams = fullParams.params || fullParams;
         const metadata = fullParams.metadata || { title: 'Untitled' };
 
+        // saveOrUpdateContentReturnMetaData - unlike saveOrUpdateContent - does not drop
+        // the saved learner states that were marked as invalidate, so we have to do it
+        // ourselves. Otherwise a learner would resume with a state that no longer
+        // matches the edited content.
+        await h5pEditor.contentUserDataManager.deleteInvalidatedContentUserDataByContentId(contentId);
+
         await h5pEditor.saveOrUpdateContentReturnMetaData(
             contentId,
             contentParams,  // Just the content parameters, not the wrapper
@@ -592,6 +623,14 @@ app.post('/api/save', async (req, res) => {
     try {
         const user = createUser(req);
         const { contentId, library, params, metadata } = req.body;
+
+        // Drop the learner states that became invalid with this update - see the
+        // comment in the POST /edit/:contentId handler.
+        // String(): the states are stored with the contentId as string, a numeric id from
+        // the JSON body would not match and nothing would be deleted.
+        if (contentId) {
+            await h5pEditor.contentUserDataManager.deleteInvalidatedContentUserDataByContentId(String(contentId));
+        }
 
         const savedId = await h5pEditor.saveOrUpdateContentReturnMetaData(
             contentId || undefined,

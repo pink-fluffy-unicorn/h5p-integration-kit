@@ -189,6 +189,36 @@ Query parameters:
 - `returnUrl` - Where to redirect after save (for /new, /edit)
 - `userId` - User identifier for tracking (for /play)
 
+The H5P client-side JavaScript additionally calls these endpoints on its own (their URLs are part of the `H5PIntegration` object of the player page):
+
+| Endpoint                                                            | Method | Description                                      |
+|---------------------------------------------------------------------|--------|--------------------------------------------------|
+| `/contentUserData/{contentId}/{dataType}/{subContentId}?userId=...` | GET    | Load the saved state of a learner                |
+| `/contentUserData/{contentId}/{dataType}/{subContentId}?userId=...` | POST   | Save the state of a learner                      |
+| `/finishedData?userId=...`                                          | POST   | Store score and duration when a learner finishes |
+
+### Learner state persistence
+
+Content types that support resuming (Course Presentation, Interactive Video, Question Set, Multiple Choice, …) post the current state of the learner to `/contentUserData` every
+`contentUserStateSaveInterval` milliseconds (5000 by default, configured in
+`h5p-server/h5p/config.json`). The server stores it with the
+`FileContentUserDataStorage` of `@lumieducation/h5p-server` as plain JSON files:
+
+```
+${H5P_DATA_PATH}/userdata/          # /data/h5p/userdata in the container
+├── <contentId>-userdata.json        # one entry per user, dataType and subContentId
+└── <contentId>-finished.json        # score, timestamps and duration per user
+```
+
+`H5P_DATA_PATH` is the mounted volume, so the states live **outside** the container image and survive `docker compose down`, an image rebuild and a container update. They are only lost if the volume itself is deleted (`docker compose down -v` for a named volume, or deleting `h5p-server/h5p/userdata/` for the bind mount).
+
+The learner is identified by the `userId` query parameter that the server writes into the callback URLs of the player page; requests without it fall back to the user
+`anonymous`. So always open the player as `/play/{id}?userId=<your user id>` - otherwise all learners share a single state per content object.
+
+When a content object is edited, states saved with `invalidate: true` are discarded, which is the intended H5P behaviour: the old state no longer matches the changed content. Deleting a content object removes its states and finished data as well.
+
+`h5p-server/test/state-persistence-test.sh` verifies all of this end to end - it saves states, removes container and image, rebuilds the stack and checks that the states are still served to the player afterwards.
+
 ## Project Structure
 
 ```
@@ -242,6 +272,26 @@ curl http://localhost:3000/health
 H5P_BASE_URL=https://your-public-url.com docker compose up -d h5p-server
 ```
 
+For a permanent deployment put the URL into a `.env` file next to `docker-compose.yml`
+instead - `cp .env.example .env` and edit it. Docker Compose reads that file automatically; without it the compose file falls back to `http://localhost:3000`.
+
+**Test and production systems:**
+
+`docker-compose.prod.yml` is the deployment variant. It pins `image`, `container_name`
+and `hostname`, runs as `1001:1001` (the `h5p` user of the image) and requires
+`H5P_BASE_URL` from `.env` - it aborts instead of falling back to localhost.
+
+```bash
+cp .env.example .env                    # set H5P_BASE_URL
+chown -R 1001:1001 h5p-server/h5p       # the mount has to belong to the container user
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs -f h5p-bootstrap
+```
+
+The `h5p-bootstrap` job is part of it and **must** run on a deployment as well: a fresh data directory has an empty library store and the H5P server never fetches missing libraries by itself, so the first content would fail with `install-missing-libraries`. The job is idempotent - already installed content types are skipped - and it exits non-zero if a download failed, so check its log after every deployment.
+
+Both compose files use the same project name and therefore replace each other; do not run them side by side on one host.
+
 **Volume Configuration:**
 
 The `docker-compose.yml` mounts the local `h5p-server/h5p/` directory by default. This includes:
@@ -249,6 +299,8 @@ The `docker-compose.yml` mounts the local `h5p-server/h5p/` directory by default
 - `editor/` - H5P editor files
 - `libraries/` - Downloaded H5P content type libraries
 - `content/` - Your saved H5P content
+- `userdata/` - Saved learner states and finished data (see [Learner state persistence](#learner-state-persistence))
+- `temp/` - Temporary uploads from the editor
 
 For production, you may want to use a named Docker volume instead (see comments in `docker-compose.yml`).
 

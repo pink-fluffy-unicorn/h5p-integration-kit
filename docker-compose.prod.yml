@@ -1,0 +1,91 @@
+# Docker Compose for the H5P server on the test and production systems.
+#
+# This is a standalone file, not an override - run it explicitly:
+#
+#   cp .env.example .env      # and set H5P_BASE_URL to the public URL
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml logs -f h5p-bootstrap
+#
+# Both files use the same compose project, so they replace each other rather than
+# running side by side - which is what you want, two servers on the same data
+# directory would corrupt it. Do not mix the two on one host.
+#
+# Differences to the development docker-compose.yml:
+#   - image, container_name and hostname are fixed, as required by the admins
+#   - the container runs as 1001:1001, the h5p user of the image
+#   - H5P_BASE_URL has no localhost fallback: a deployment without it would generate
+#     asset and callback URLs pointing at localhost, so it aborts instead
+
+services:
+  h5p-server:
+    image: h5p-server_image
+    container_name: h5p-server
+    hostname: h5p-server
+    build:
+      context: ./h5p-server
+      dockerfile: Dockerfile
+    # The image creates the user h5p with 1001:1001 - matching it keeps the mounted
+    # data writable for the server and avoids root-owned files on the host. The mounted
+    # directory has to belong to that user, otherwise content, libraries and the learner
+    # states cannot be written:
+    #   chown -R 1001:1001 h5p-server/h5p
+    user: "${UID:-1001}:${GID:-1001}"
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      # Public URL the browser can reach, e.g. https://pre.bps-system.de/h5p.
+      # Comes from the .env file next to this compose file.
+      - H5P_BASE_URL=${H5P_BASE_URL:?H5P_BASE_URL is not set - copy .env.example to .env}
+      - H5P_DATA_PATH=/data/h5p
+    volumes:
+      # Everything the server persists lives below this path - libraries, content, and
+      # the saved states of the learners in userdata/. Keeping the mount is what makes
+      # those states survive a container rebuild or update.
+      - ./h5p-server/h5p:/data/h5p
+      # Alternative: named volume. It must be seeded with core/ and editor/ before the
+      # first start, see "Production Setup with Named Volume" in the README.
+      # - h5p_data:/data/h5p
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # One-shot job: installs the H5P interaction types from the H5P Hub as soon as the
+  # server is healthy. This step is required here as well - a fresh deployment has an
+  # empty library store and the H5P server never fetches missing libraries by itself,
+  # so without it the first content registered via the API fails with
+  # "install-missing-libraries".
+  #
+  # Idempotent - content types that are already present are skipped, so it runs on every
+  # `up`. It exits non-zero if the Hub was reachable but a download failed, so check the
+  # log after a deployment:
+  #
+  #   docker compose -f docker-compose.prod.yml logs h5p-bootstrap
+  #
+  # The server itself stays usable in that case, only the failed content types are
+  # missing - rerunning the job installs them.
+  h5p-bootstrap:
+    image: h5p-server_image
+    container_name: h5p-bootstrap
+    build:
+      context: ./h5p-server
+      dockerfile: Dockerfile
+    depends_on:
+      h5p-server:
+        condition: service_healthy
+    environment:
+      # Reached over the compose network, so this is independent of H5P_BASE_URL
+      - H5P_SERVER_URL=http://h5p-server:3000
+      - H5P_BOOTSTRAP_LIBRARIES=${H5P_BOOTSTRAP_LIBRARIES:-all}
+      - H5P_BOOTSTRAP_RETRIES=${H5P_BOOTSTRAP_RETRIES:-3}
+      - H5P_BOOTSTRAP_UPDATE=${H5P_BOOTSTRAP_UPDATE:-false}
+    command: [ "node", "src/bootstrap-libraries.js" ]
+    restart: "no"
+
+volumes:
+  h5p_data:
+    driver: local

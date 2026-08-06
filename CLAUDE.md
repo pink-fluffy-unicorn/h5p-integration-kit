@@ -30,7 +30,15 @@ h5p-integration-kit/
 │   │   ├── sample_lms/       # Demo LMS app
 │   │   └── lms_project/      # Django settings
 │   └── lti-provider/          # LTI 1.3 tool provider
-└── docker-compose.yml
+├── docker-compose.yml         # development
+└── docker-compose.prod.yml    # test and production systems
+```
+
+Both compose files run `h5p-server` **and** the one-shot `h5p-bootstrap` job that installs the interaction types from the H5P Hub. Never drop the bootstrap from a deployment - a fresh library store makes the first content fail with `install-missing-libraries`.
+`docker-compose.prod.yml` is standalone, not an override:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 ## Commands
@@ -98,18 +106,37 @@ H5P Server (localhost:3000)
 
 ## H5P Server API
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/new` | GET | Editor for new content |
-| `/edit/{id}` | GET | Editor for existing content |
-| `/play/{id}` | GET | Player for content |
-| `/api/content` | GET | List all content |
-| `/api/content/{id}` | DELETE | Delete content |
-| `/health` | GET | Health check |
+| Endpoint                                          | Method   | Description                                                           |
+|---------------------------------------------------|----------|-----------------------------------------------------------------------|
+| `/new`                                            | GET      | Editor for new content                                                |
+| `/edit/{id}`                                      | GET      | Editor for existing content                                           |
+| `/play/{id}`                                      | GET      | Player for content                                                    |
+| `/api/content`                                    | GET      | List all content                                                      |
+| `/api/content/{id}`                               | DELETE   | Delete content                                                        |
+| `/contentUserData/{id}/{dataType}/{subContentId}` | GET/POST | Saved state of a learner (called by the H5P client)                   |
+| `/finishedData`                                   | POST     | Score and duration when a learner finishes (called by the H5P client) |
+| `/health`                                         | GET      | Health check                                                          |
 
 Query parameters:
 - `returnUrl` - Callback URL after save (for /new, /edit)
-- `userId` - User ID for tracking (for /play)
+- `userId` - User ID for tracking (for /play, /contentUserData, /finishedData)
+
+## Learner States ("Zwischenspeicherungen")
+
+Content types that can be resumed post their state to `/contentUserData` every
+`contentUserStateSaveInterval` ms (5000, in `h5p-server/h5p/config.json`). It is stored with `H5P.fsImplementations.FileContentUserDataStorage` as JSON files in
+`${H5P_DATA_PATH}/userdata/` (`<contentId>-userdata.json`, `<contentId>-finished.json`).
+
+Because `H5P_DATA_PATH` is the mounted volume, the states survive a container rebuild. Never move `userdata/` out of that path.
+
+The `userId` is carried in the callback URLs via the `queryParamGenerator` of the
+`UrlGenerator` in [src/index.js](h5p-server/src/index.js); without it every learner would be stored as `anonymous`.
+
+Regression test (rebuilds the containers):
+
+```bash
+./h5p-server/test/state-persistence-test.sh
+```
 
 ## Webhook Payload
 

@@ -37,6 +37,7 @@ yarn-error.log
 h5p-server/h5p/content/
 h5p-server/h5p/libraries/
 h5p-server/h5p/temp/
+h5p-server/h5p/userdata/
 h5p-server/h5p/config.json
 
 # Docker volumes (if mounted locally)

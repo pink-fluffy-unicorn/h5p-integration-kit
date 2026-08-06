@@ -21,7 +21,7 @@ RUN npm ci --only=production
 COPY src/ ./src/
 
 # Create directories for H5P data (will be mounted as volumes)
-RUN mkdir -p /data/h5p/content /data/h5p/libraries /data/h5p/temp /data/h5p/core /data/h5p/editor
+RUN mkdir -p /data/h5p/content /data/h5p/libraries /data/h5p/temp /data/h5p/core /data/h5p/editor /data/h5p/userdata
 
 # Environment variables with sensible defaults
 ENV NODE_ENV=production
