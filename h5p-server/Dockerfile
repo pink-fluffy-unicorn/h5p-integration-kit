@@ -4,18 +4,31 @@
 # This container provides an H5P content authoring and playback server
 # that can be integrated with any LMS via HTTP API.
 
-FROM node:20-alpine
+# Node 20 reached end of life in April 2026 - stay on the current LTS line
+FROM node:24-alpine
 
 LABEL maintainer="Chris Honselaar"
 LABEL description="H5P Content Server for LMS Integration"
 LABEL license="GPL-3.0-or-later"
+
+# Pull in the Alpine security fixes that were published after the base image was
+# built (typically libssl3/libcrypto3). Without this step every vulnerability scan
+# of the image reports the OpenSSL CVEs of the day. Docker caches this layer, so a
+# deployment build has to run with --pull --no-cache to actually get new fixes.
+RUN apk upgrade --no-cache
 
 # Create app directory
 WORKDIR /app
 
 # Install dependencies first (better layer caching)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev
+
+# npm, npx and corepack are only needed for the install above. Their bundled
+# dependencies (tar, minimatch, glob, ...) make up most of the findings of image
+# scanners, and the server is started with node directly, so drop them from the
+# runtime image.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /root/.npm
 
 # Copy application code
 COPY src/ ./src/

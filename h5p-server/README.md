@@ -46,6 +46,39 @@ This server wraps those libraries into a **complete HTTP service** with:
 - CORS configured for cross-origin embedding
 - Cross-origin iframe fixes for H5P's parent window access
 
+### Security Scanning
+
+The image is meant to pass a vulnerability scan (Trivy, Grype, ...) without HIGH or
+CRITICAL findings. Reproduce the scan of the admins with:
+
+```bash
+docker compose -f docker-compose.prod.yml build --pull --no-cache
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+    image --severity HIGH,CRITICAL h5p-server_image
+```
+
+What keeps the image clean:
+
+- `node:24-alpine` as base plus `apk upgrade` in the Dockerfile, so the OpenSSL fixes
+  published after the base image was built are included. Docker caches that layer,
+  so build deployments with `--pull --no-cache`, otherwise the fixes of the day are
+  not picked up
+- `npm ci` prints "3 high severity vulnerabilities" during the build - that is the
+  `image-size` finding described below, nothing else
+- npm, npx and corepack are removed from the runtime image. Their bundled
+  dependencies (`tar`, `minimatch`, `glob`, ...) were the bulk of the findings, and the
+  server is started with `node` directly
+- pinned `overrides` in `package.json` for transitive packages that the H5P server
+  does not update itself (`qs`, `sanitize-html`, `nanoid`, ...) - check them with
+  `npm audit --omit=dev` after an update
+
+Known finding without a fix: `image-size` (CVE-2025-71329, CVE-2025-71330, all
+released versions affected). The H5P editor calls it for every upload declared as an
+image, and crafted ICNS/JXL/HEIF files hang the event loop. The server disables those
+parsers at startup in [src/index.js](src/index.js), so the finding is mitigated even
+though scanners keep reporting the package. Remove the workaround once
+`@lumieducation/h5p-server` depends on a fixed release.
+
 ## Quick Start
 
 ### Using Node.js

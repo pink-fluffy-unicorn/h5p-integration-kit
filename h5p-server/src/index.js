@@ -18,6 +18,16 @@ import {fileURLToPath} from 'url';
 import fs from 'fs/promises';
 import {readFileSync} from 'fs';
 import * as H5P from '@lumieducation/h5p-server';
+import imageSize from 'image-size';
+
+// image-size (used by H5PEditor for every upload with an image/* mimetype) has no
+// release that fixes CVE-2025-71329 and CVE-2025-71330: crafted ICNS, JXL and HEIF
+// buffers send its parsers into an infinite loop and block the event loop for good.
+// H5P never needs those formats, so the affected parsers are switched off. The
+// mimetype comes from the client, so the whitelist of extensions is no protection.
+// This is the same module instance the editor requires, the parsers stay disabled
+// there as well.
+imageSize.disableTypes(['icns', 'jxl', 'jxl-stream', 'heif']);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

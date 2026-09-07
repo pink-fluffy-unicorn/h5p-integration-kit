@@ -43,6 +43,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 Deployment hosts set `COMPOSE_FILE=docker-compose.prod.yml` in their `.env`, so `-f` can be omitted there. If a `.env` with that line is present, plain `docker compose` commands act on the deployment stack, not on the development one.
 
+The admins scan the image with Trivy for HIGH/CRITICAL findings. The Dockerfile removes npm/corepack from the runtime image and `package.json` pins vulnerable transitive packages via `overrides`, see "Security Scanning" in [h5p-server/README.md](h5p-server/README.md). `image-size` has no fixed release, its vulnerable parsers are disabled in `src/index.js`. Do not remove that call.
+
 ## Commands
 
 ### Start H5P Server
