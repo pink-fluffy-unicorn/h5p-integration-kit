@@ -63,21 +63,24 @@ What keeps the image clean:
   published after the base image was built are included. Docker caches that layer,
   so build deployments with `--pull --no-cache`, otherwise the fixes of the day are
   not picked up
-- `npm ci` prints "3 high severity vulnerabilities" during the build - that is the
-  `image-size` finding described below, nothing else
+- `npm ci` must report "found 0 vulnerabilities" during the build
 - npm, npx and corepack are removed from the runtime image. Their bundled
   dependencies (`tar`, `minimatch`, `glob`, ...) were the bulk of the findings, and the
   server is started with `node` directly
 - pinned `overrides` in `package.json` for transitive packages that the H5P server
-  does not update itself (`qs`, `sanitize-html`, `nanoid`, ...) - check them with
-  `npm audit --omit=dev` after an update
+  does not update itself (`axios`, `qs`, `sanitize-html`, `nanoid`, ...) - check them
+  with `npm audit --omit=dev` after an update
 
-Known finding without a fix: `image-size` (CVE-2025-71329, CVE-2025-71330, all
-released versions affected). The H5P editor calls it for every upload declared as an
-image, and crafted ICNS/JXL/HEIF files hang the event loop. The server disables those
-parsers at startup in [src/index.js](src/index.js), so the finding is mitigated even
-though scanners keep reporting the package. Remove the workaround once
-`@lumieducation/h5p-server` depends on a fixed release.
+`image-size` (CVE-2025-71329, CVE-2025-71330) is only fixed in 2.x, while
+`@lumieducation/h5p-server` 10.x still depends on `^1.0.2`. The override forces 2.x,
+and [src/image-size-compat.js](src/image-size-compat.js) bridges the API change: the
+H5P editor passes the temp file path of an upload, 2.x only accepts a buffer. The
+module has to be imported in [src/index.js](src/index.js) before
+`@lumieducation/h5p-server`. It also keeps the ICNS/JXL/HEIF parsers disabled, H5P
+never needs them. Remove the compat layer and the override once
+`@lumieducation/h5p-server` depends on `image-size` 2.x.
+
+`fast-uri` stays on the latest 3.x release, because `ajv` 8 requires `^3`.
 
 ## Quick Start
 
